@@ -193,7 +193,8 @@ parser.add_argument('--eval-metric', default='map', type=str, metavar='EVAL_METR
 parser.add_argument('--tta', type=int, default=0, metavar='N',
                     help='Test/inference time augmentation (oversampling) factor. 0=None (default: 0)')
 parser.add_argument("--local_rank", default=0, type=int)
-
+parser.add_argument('--grad_accumulation_steps', default=1, type=int,
+                    help='Number of gradient accumulation steps')
 
 def _parse_args():
     # Do we have a config file to parse?
@@ -469,17 +470,19 @@ def train_epoch(
         if not args.distributed:
             losses_m.update(loss.item(), input.size(0))
 
-        optimizer.zero_grad()
-        if use_amp:
-            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
-            if args.clip_grad:
-                torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.clip_grad)
-        else:
-            loss.backward()
-            if args.clip_grad:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
-        optimizer.step()
+        if (batch_idx + 1) % args.grad_accumulation_steps == 0:
+            optimizer.zero_grad()
+            if use_amp:
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
+                if args.clip_grad:
+                    torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.clip_grad)
+            else:
+                loss.backward()
+                if args.clip_grad:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
+            optimizer.step()
+
 
         torch.cuda.synchronize()
         if model_ema is not None:
