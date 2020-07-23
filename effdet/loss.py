@@ -1,114 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-from .anchors import decode_box_outputs
 
 from typing import Optional, List
+from .anchors import decode_box_outputs
+from .iou_loss import *
 
-eps = 10e-16
-
-
-def compute_iou(bboxes1, bboxes2):
-    "bboxes1 of shape [N, 4] and bboxes2 of shape [N, 4]"
-    assert bboxes1.size(0) == bboxes2.size(0)
-    area1 = (bboxes1[:, 2] - bboxes1[:, 0]) * (bboxes1[:, 3] - bboxes1[:, 1])
-    area2 = (bboxes2[:, 2] - bboxes2[:, 0]) * (bboxes2[:, 3] - bboxes2[:, 1])
-    min_x2 = torch.min(bboxes1[:, 2], bboxes2[:, 2])
-    max_x1 = torch.max(bboxes1[:, 0], bboxes2[:, 0])
-    min_y2 = torch.min(bboxes1[:, 3], bboxes2[:, 3])
-    max_y1 = torch.max(bboxes1[:, 1], bboxes2[:, 1])
-
-    inter = torch.where(min_x2 - max_x1 > 0, min_x2 - max_x1, torch.tensor(0.)) * \
-            torch.where(min_y2 - max_y1 > 0, min_y2 - max_y1, torch.tensor(0.))
-    union = area1 + area2 - inter
-    iou = inter / union
-    iou = torch.clamp(iou, min=0, max=1.0)
-    return iou
-
-
-def compute_g_iou(bboxes1, bboxes2):
-    "box1 of shape [N, 4] and box2 of shape [N, 4]"
-    # assert bboxes1.size(0) == bboxes2.size(0)
-    area1 = (bboxes1[:, 2] - bboxes1[:, 0]) * (bboxes1[:, 3] - bboxes1[:, 1])
-    area2 = (bboxes2[:, 2] - bboxes2[:, 0]) * (bboxes2[:, 3] - bboxes2[:, 1])
-    min_x2 = torch.min(bboxes1[:, 2], bboxes2[:, 2])
-    max_x1 = torch.max(bboxes1[:, 0], bboxes2[:, 0])
-    min_y2 = torch.min(bboxes1[:, 3], bboxes2[:, 3])
-    max_y1 = torch.max(bboxes1[:, 1], bboxes2[:, 1])
-    inter = torch.clamp(min_x2 - max_x1, min=0) * torch.clamp(min_y2 - max_y1, min=0)
-    union = area1 + area2 - inter
-    C = (torch.max(bboxes1[:, 2], bboxes2[:, 2]) - torch.min(bboxes1[:, 0], bboxes2[:, 0])) * \
-        (torch.max(bboxes1[:, 3], bboxes2[:, 3]) - torch.min(bboxes1[:, 1], bboxes2[:, 1]))
-    g_iou = inter / union - (C - union) / C
-    g_iou = torch.clamp(g_iou, min=0, max=1.0)
-    return g_iou
-
-
-def compute_d_iou(bboxes1, bboxes2):
-    "bboxes1 of shape [N, 4] and bboxes2 of shape [N, 4]"
-    # assert bboxes1.size(0) == bboxes2.size(0)
-    area1 = (bboxes1[:, 2] - bboxes1[:, 0]) * (bboxes1[:, 3] - bboxes1[:, 1])
-    area2 = (bboxes2[:, 2] - bboxes2[:, 0]) * (bboxes2[:, 3] - bboxes2[:, 1])
-    min_x2 = torch.min(bboxes1[:, 2], bboxes2[:, 2])
-    max_x1 = torch.max(bboxes1[:, 0], bboxes2[:, 0])
-    min_y2 = torch.min(bboxes1[:, 3], bboxes2[:, 3])
-    max_y1 = torch.max(bboxes1[:, 1], bboxes2[:, 1])
-    inter = torch.clamp(min_x2 - max_x1, min=0) * torch.clamp(min_y2 - max_y1, min=0)
-    union = area1 + area2 - inter
-    center_x1 = (bboxes1[:, 2] + bboxes1[:, 0]) / 2
-    center_y1 = (bboxes1[:, 3] + bboxes1[:, 1]) / 2
-    center_x2 = (bboxes2[:, 2] + bboxes2[:, 0]) / 2
-    center_y2 = (bboxes2[:, 3] + bboxes2[:, 1]) / 2
-
-    # squared euclidian distance between the target and predicted bboxes
-    d_2 = (center_x1 - center_x2) ** 2 + (center_y1 - center_y2) ** 2
-    # squared length of the diagonal of the minimum bbox that encloses both bboxes
-    c_2 = (torch.max(bboxes1[:, 2], bboxes2[:, 2]) - torch.min(bboxes1[:, 0], bboxes2[:, 0])) ** 2 + (
-            torch.max(bboxes1[:, 3], bboxes2[:, 3]) - torch.min(bboxes1[:, 1], bboxes2[:, 1])) ** 2
-    d_iou = inter / union - d_2 / c_2
-    d_iou = torch.clamp(d_iou, min=-1.0, max=1.0)
-
-    return d_iou
-
-
-def compute_c_iou(bboxes1, bboxes2):
-    "bboxes1 of shape [N, 4] and bboxes2 of shape [N, 4]"
-    # assert bboxes1.size(0) == bboxes2.size(0)
-    w1 = bboxes1[:, 2] - bboxes1[:, 0]
-    h1 = bboxes1[:, 3] - bboxes1[:, 1]
-    w2 = bboxes2[:, 2] - bboxes2[:, 0]
-    h2 = bboxes2[:, 3] - bboxes2[:, 1]
-    area1 = w1 * h1
-    area2 = w2 * h2
-    min_x2 = torch.min(bboxes1[:, 2], bboxes2[:, 2])
-    max_x1 = torch.max(bboxes1[:, 0], bboxes2[:, 0])
-    min_y2 = torch.min(bboxes1[:, 3], bboxes2[:, 3])
-    max_y1 = torch.max(bboxes1[:, 1], bboxes2[:, 1])
-
-    inter = torch.clamp(min_x2 - max_x1, min=0) * torch.clamp(min_y2 - max_y1, min=0)
-    union = area1 + area2 - inter
-
-    center_x1 = (bboxes1[:, 2] + bboxes1[:, 0]) / 2
-    center_y1 = (bboxes1[:, 3] + bboxes1[:, 1]) / 2
-    center_x2 = (bboxes2[:, 2] + bboxes2[:, 0]) / 2
-    center_y2 = (bboxes2[:, 3] + bboxes2[:, 1]) / 2
-    # squared euclidian distance between the target and predicted bboxes
-    d_2 = (center_x1 - center_x2) ** 2 + (center_y1 - center_y2) ** 2
-    # squared length of the diagonal of the minimum bbox that encloses both bboxes
-    c_2 = (torch.max(bboxes1[:, 2], bboxes2[:, 2]) - torch.min(bboxes1[:, 0], bboxes2[:, 0])) ** 2 + (
-            torch.max(bboxes1[:, 3], bboxes2[:, 3]) - torch.min(bboxes1[:, 1], bboxes2[:, 1])) ** 2
-    iou = inter / union
-    v = 4 / np.pi ** 2 * (torch.atan(w1 / h1) - torch.atan(w2 / h2)) ** 2
-    with torch.no_grad():
-        S = 1 - iou
-        alpha = v / (S + v + eps)
-    c_iou = iou - (d_2 / c_2 + alpha * v)
-    c_iou = torch.clamp(c_iou, min=-1.0, max=1.0)
-    return c_iou
-
-
-def focal_loss(logits, targets, alpha: float, gamma: float, normalizer, num_cls, smooth_rate=0.1):
+def focal_loss(logits, targets, alpha: float, gamma: float, normalizer):
     """Compute the focal loss between `logits` and the golden `target` values.
 
     Focal loss = -(1-pt)^gamma * log(pt)
@@ -124,19 +22,13 @@ def focal_loss(logits, targets, alpha: float, gamma: float, normalizer, num_cls,
 
         gamma: A float32 scalar modulating loss from hard and easy examples.
 
-        normalizer: A float32 scalar normalizes the total loss from all examples.
-
-        num_cls: number of classes
-
-        smooth_rate: A float32 number used for label smoothing
+         normalizer: A float32 scalar normalizes the total loss from all examples.
 
     Returns:
         loss: A float32 scalar representing normalized total loss.
     """
 
     positive_label_mask = targets == 1.0
-    targets = targets * (1 - smooth_rate) + smooth_rate/num_cls
-
     cross_entropy = F.binary_cross_entropy_with_logits(logits, targets.to(logits.dtype), reduction='none')
     # Below are comments/derivations for computing modulator.
     # For brevity, let x = logits,  z = targets, r = gamma, and p_t = sigmod(x)
@@ -209,10 +101,10 @@ def smooth_l1_loss(
     return loss.mean() if size_average else loss.sum()
 
 
-def _classification_loss(cls_outputs, cls_targets, num_positives, num_cls, alpha: float = 0.25, gamma: float = 2.0):
-    """Computes classification loss. Focal_loss"""
+def _classification_loss(cls_outputs, cls_targets, num_positives, alpha: float = 0.25, gamma: float = 2.0):
+    """Computes classification loss."""
     normalizer = num_positives
-    classification_loss = focal_loss(cls_outputs, cls_targets, alpha, gamma, normalizer, num_cls + 1)
+    classification_loss = focal_loss(cls_outputs, cls_targets, alpha, gamma, normalizer)
     return classification_loss
 
 
@@ -226,6 +118,7 @@ def _box_loss(box_outputs, box_targets, num_positives, delta: float = 0.1):
     box_loss = huber_loss(box_targets, box_outputs, weights=mask, delta=delta, size_average=False)
     box_loss /= normalizer
     return box_loss
+
 
 
 class IouLoss(nn.Module):
@@ -252,16 +145,8 @@ class IouLoss(nn.Module):
             return loss
 
 
-def one_hot(x, num_classes: int):
-    # NOTE: PyTorch one-hot does not handle -ve entries (no hot) like Tensorflow, so mask them out
-    x_non_neg = (x >= 0).to(x.dtype)
-    onehot = torch.zeros(x.shape + (num_classes,), device=x.device, dtype=x.dtype)
-    onehot.scatter_(-1, (x * x_non_neg).unsqueeze(-1), 1)
-    return onehot * x_non_neg.unsqueeze(-1)
-
-
 class DetectionLoss(nn.Module):
-    def __init__(self, config, anchors, use_iou_loss=True):
+    def __init__(self, config, anchors, use_iou_loss = False):
         super(DetectionLoss, self).__init__()
         self.config = config
         self.num_classes = config.num_classes
@@ -282,14 +167,21 @@ class DetectionLoss(nn.Module):
         Args:
             cls_outputs: a List with values representing logits in [batch_size, height, width, num_anchors].
                 at each feature level (index)
+
             box_outputs: a List with values representing box regression targets in
                 [batch_size, height, width, num_anchors * 4] at each feature level (index)
+
             cls_targets: groundtruth class targets.
+
             box_targets: groundtrusth box targets.
+
             num_positives: num positive grountruth anchors
+
         Returns:
             total_loss: an integer tensor representing total loss reducing from class and box losses from all levels.
+
             cls_loss: an integer tensor representing total class loss.
+
             box_loss: an integer tensor representing total box regression loss.
         """
         # Sum all positives in a batch for normalization and avoid zero
@@ -299,12 +191,21 @@ class DetectionLoss(nn.Module):
 
         cls_losses = []
         box_losses = []
+        if self.use_iou_loss:
+            box_outputs_list = []
+            cls_targets_list = []
+            box_targets_list = []
+
         for l in range(levels):
             cls_targets_at_level = cls_targets[l]
             box_targets_at_level = box_targets[l]
 
             # Onehot encoding for classification labels.
-            cls_targets_at_level_oh = one_hot(cls_targets_at_level, self.num_classes)
+            # NOTE: PyTorch one-hot does not handle -ve entries (no hot) like Tensorflow, so mask them out
+            cls_targets_non_neg = cls_targets_at_level >= 0
+            cls_targets_at_level_oh = F.one_hot(cls_targets_at_level * cls_targets_non_neg, self.num_classes)
+            cls_targets_at_level_oh = torch.where(
+               cls_targets_non_neg.unsqueeze(-1), cls_targets_at_level_oh, torch.zeros_like(cls_targets_at_level_oh))
 
             bs, height, width, _, _ = cls_targets_at_level_oh.shape
             cls_targets_at_level_oh = cls_targets_at_level_oh.view(bs, height, width, -1)
@@ -312,19 +213,37 @@ class DetectionLoss(nn.Module):
                 cls_outputs[l].permute(0, 2, 3, 1),
                 cls_targets_at_level_oh,
                 num_positives_sum,
-                alpha=self.alpha, gamma=self.gamma, num_cls=self.num_classes)
+                alpha=self.alpha, gamma=self.gamma)
             cls_loss = cls_loss.view(bs, height, width, -1, self.num_classes)
             cls_loss *= (cls_targets_at_level != -2).unsqueeze(-1).float()
             cls_losses.append(cls_loss.sum())
+            if not self.use_iou_loss:
+                box_losses.append(_box_loss(
+                    box_outputs[l].permute(0, 2, 3, 1),
+                    box_targets_at_level,
+                    num_positives_sum,
+                    delta=self.delta))
 
-            box_losses.append(_box_loss(
-                box_outputs[l].permute(0, 2, 3, 1),
-                box_targets_at_level,
-                num_positives_sum,
-                delta=self.delta))
+            else:
+                box_outputs_list.append(box_outputs[l].permute(0, 2, 3, 1).reshape([bs, -1, 4]))
+                cls_targets_list.append(cls_targets_at_level.permute(0, 2, 3, 1).reshape([bs, -1, 1]))
+                box_targets_list.append(box_targets_at_level.permute(0, 2, 3, 1).reshape([bs, -1, 4]))
+
+
+        if self.use_iou_loss:
+            # apply bounding box regression to anchors
+            for k in range(box_outputs_list.shape[0]):
+                pred_boxes = decode_box_outputs(box_outputs_list[k].T.float(), self.anchors.boxes.T, output_xyxy=True)
+                target_boxes = decode_box_outputs(box_targets_list[k].T.float(), self.anchors.boxes.T, output_xyxy=True)
+                # indices where an anchor is assigned to target box
+                indices = box_targets_list[k] == 0.0
+                pred_boxes = torch.clamp(pred_boxes, 0)
+                box_losses.append(self.iou_loss(target_boxes[indices.view(-1)], pred_boxes[indices.view(-1)]))
+
 
         # Sum per level losses to total loss.
         cls_loss = torch.sum(torch.stack(cls_losses, dim=-1), dim=-1)
         box_loss = torch.sum(torch.stack(box_losses, dim=-1), dim=-1)
         total_loss = cls_loss + self.box_loss_weight * box_loss
         return total_loss, cls_loss, box_loss
+
