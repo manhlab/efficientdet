@@ -17,7 +17,7 @@ from apex import amp
 def get_train_transforms():
     return A.Compose(
         [
-            A.RandomSizedCrop(min_max_height=(800, 800), height=1024, width=1024, p=0.5),
+            A.RandomSizedCrop(min_max_height=(510, 510), height=512, width=512, p=0.5),
             A.OneOf([
                 A.HueSaturationValue(
                     hue_shift_limit=0.2,
@@ -34,7 +34,7 @@ def get_train_transforms():
             A.ToGray(p=0.01),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
-            A.Resize(height=1024, width=1024, p=1),
+            A.Resize(height=512, width=512, p=1),
             A.Cutout(num_holes=8, max_h_size=64, max_w_size=64, fill_value=0, p=0.5),
             ToTensorV2(p=1.0),
         ],
@@ -51,7 +51,7 @@ def get_train_transforms():
 def get_valid_transforms():
     return A.Compose(
         [
-            A.Resize(height=1024, width=1024, p=1.0),
+            A.Resize(height=512, width=512, p=1.0),
             ToTensorV2(p=1.0),
         ],
         p=1.0,
@@ -122,7 +122,7 @@ class DatasetRetriever(Dataset):
         labels = torch.ones((boxes.shape[0],), dtype=torch.int64)
 
         target = {'boxes': boxes, 'labels': labels, 'image_id': torch.tensor([index]),
-                  'img_scale': torch.tensor([1.]), 'img_size': torch.tensor([(1024, 1024)])}
+                  'img_scale': torch.tensor([1.]), 'img_size': torch.tensor([(512, 512)])}
 
         if self.transforms:
             for i in range(10):
@@ -156,7 +156,7 @@ class DatasetRetriever(Dataset):
         boxes[:, 3] = boxes[:, 1] + boxes[:, 3]
         return image, boxes
 
-    def load_mixup_image_and_boxes(self, index, imsize=1024):
+    def load_mixup_image_and_boxes(self, index, imsize=512):
         img, labels = self.load_image_and_boxes(index)
         img2, labels2 = self.load_image_and_boxes(random.randint(0, self.image_ids.shape[0] - 1))
         r = 0.5  # mixup 1:1
@@ -164,7 +164,7 @@ class DatasetRetriever(Dataset):
         labels = np.concatenate((labels, labels2), 0)
         return img, labels
 
-    def load_mosaic_image_and_boxes(self, index, imsize=1024):
+    def load_mosaic_image_and_boxes(self, index, imsize=512):
         """
         This implementation of cutmix author:  https://www.kaggle.com/nvnnghia
         Refactoring and adaptation: https://www.kaggle.com/shonenkov
@@ -210,7 +210,7 @@ class DatasetRetriever(Dataset):
             np.where((result_boxes[:, 2] - result_boxes[:, 0]) * (result_boxes[:, 3] - result_boxes[:, 1]) > 0)]
         return result_image, result_boxes
 
-    def load_cutmix_image_and_boxes(self, index, imsize=1024):
+    def load_cutmix_image_and_boxes(self, index, imsize=512):
         image, boxes = self.load_image_and_boxes(index)
         r_image, r_boxes = self.load_image_and_boxes(random.randint(0, self.image_ids.shape[0] - 1))
 
@@ -235,7 +235,7 @@ class DatasetRetriever(Dataset):
 
         return mixup_image, boxes
 
-    def load_moaic_mixup_image_and_boxes(self, index, imsize=1024):
+    def load_moaic_mixup_image_and_boxes(self, index, imsize=512):
         img, boxes = self.load_mosaic_image_and_boxes(index)
         img2, boxes2 = self.load_mosaic_image_and_boxes(random.randint(0, self.image_ids.shape[0] - 1))
         r = 0.5  # mixup 1:1
