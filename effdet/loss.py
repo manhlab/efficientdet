@@ -157,7 +157,7 @@ class DetectionLoss(nn.Module):
         self.use_iou_loss = use_iou_loss
         if self.use_iou_loss:
             self.anchors = anchors
-            self.iou_loss = IouLoss()
+            self.iou_loss = IouLoss(losstype='Diou') ## Diou
 
     def forward(
             self, cls_outputs: List[torch.Tensor], box_outputs: List[torch.Tensor],
