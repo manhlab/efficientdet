@@ -469,6 +469,7 @@ def train_epoch(
         if not args.distributed:
             losses_m.update(loss.item(), input.size(0))
 
+<<<<<<< HEAD
         optimizer.zero_grad()
         if use_amp:
             with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -480,6 +481,21 @@ def train_epoch(
             if args.clip_grad:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
         optimizer.step()
+=======
+        if (batch_idx + current_epoch*num_batch) % args.grad_accumulation_steps == 0:
+            optimizer.zero_grad()
+            if use_amp:
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
+                if args.clip_grad:
+                    torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.clip_grad)
+            else:
+                loss.backward()
+                if args.clip_grad:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
+            optimizer.step()
+
+>>>>>>> 6b02d53f76d7785f681dc1ae4eabe7ab58ebb9fb
 
         torch.cuda.synchronize()
         if model_ema is not None:
