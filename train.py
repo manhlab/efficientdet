@@ -470,7 +470,7 @@ def train_epoch(
         if not args.distributed:
             losses_m.update(loss.item(), input.size(0))
 
-        if (batch_idx + 1) % args.grad_accumulation_steps == 0:
+        if (batch_idx + current_epoch*num_batch) % args.grad_accumulation_steps == 0:
             optimizer.zero_grad()
             if use_amp:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
