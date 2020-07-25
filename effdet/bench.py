@@ -120,7 +120,7 @@ class DetBenchEval(nn.Module):
         # FIXME we may be able to do this as a batch with some tensor reshaping/indexing, PR welcome
         for i in range(x.shape[0]):
             detections = generate_detections(
-                class_out[i], box_out[i], self.anchors.boxes, indices[i], classes[i], image_scales[i])
+                class_out[i], box_out[i], self.anchors.boxes, indices[i], classes[i], image_scales[i], 1024)
             batch_detections.append(detections)
         return torch.stack(batch_detections, dim=0)
 
