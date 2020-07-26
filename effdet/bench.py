@@ -102,29 +102,7 @@ class DetBenchTrain(nn.Module):
                 target['img_scale'], target['img_size'])
         return output
 
-class DetBenchEval(nn.Module):
-    def __init__(self, model, config):
-        super(DetBenchEval, self).__init__()
-        self.config = config
-        self.model = model
-        self.anchors = Anchors(
-            config.min_level, config.max_level,
-            config.num_scales, config.aspect_ratios,
-            config.anchor_scale, config.image_size)
 
-    def forward(self, x, image_scales):
-        class_out, box_out = self.model(x)
-        class_out, box_out, indices, classes = _post_process(self.config, class_out, box_out)
-
-        batch_detections = []
-        # FIXME we may be able to do this as a batch with some tensor reshaping/indexing, PR welcome
-        for i in range(x.shape[0]):
-            detections = generate_detections(
-                class_out[i], box_out[i], self.anchors.boxes, indices[i], classes[i], image_scales[i], 1024)
-            batch_detections.append(detections)
-        return torch.stack(batch_detections, dim=0)
-
-        
 def unwrap_bench(model):
     # Unwrap a model in support bench so that various other fns can access the weights and attribs of the
     # underlying model directly
