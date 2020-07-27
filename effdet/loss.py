@@ -123,7 +123,7 @@ def _box_loss(box_outputs, box_targets, num_positives, delta: float = 0.1):
 
 class IouLoss(nn.Module):
 
-    def __init__(self, losstype='Ciou', reduction='mean'):
+    def __init__(self, losstype='Giou', reduction='mean'):
         super(IouLoss, self).__init__()
         self.reduction = reduction
         self.loss = losstype
@@ -132,12 +132,14 @@ class IouLoss(nn.Module):
         num = target_bboxes.shape[0]
         if self.loss == 'Iou':
             loss = torch.sum(1.0 - compute_iou(target_bboxes, pred_bboxes))
-        elif self.loss == 'Giou':
-            loss = torch.sum(1.0 - compute_g_iou(target_bboxes, pred_bboxes))
-        elif self.loss == 'Diou':
-            loss = torch.sum(1.0 - compute_d_iou(target_bboxes, pred_bboxes))
         else:
-            loss = torch.sum(1.0 - compute_c_iou(target_bboxes, pred_bboxes))
+            if self.loss == 'Giou':
+                loss = torch.sum(1.0 - compute_g_iou(target_bboxes, pred_bboxes))
+            else:
+                if self.loss == 'Diou':
+                    loss = torch.sum(1.0 - compute_d_iou(target_bboxes, pred_bboxes))
+                else:
+                    loss = torch.sum(1.0 - compute_c_iou(target_bboxes, pred_bboxes))
 
         if self.reduction == 'mean':
             return loss / num
@@ -146,7 +148,7 @@ class IouLoss(nn.Module):
 
 
 class DetectionLoss(nn.Module):
-    def __init__(self, config, anchors, use_iou_loss = False):
+    def __init__(self, config, anchors, use_iou_loss = True):
         super(DetectionLoss, self).__init__()
         self.config = config
         self.num_classes = config.num_classes
@@ -157,7 +159,7 @@ class DetectionLoss(nn.Module):
         self.use_iou_loss = use_iou_loss
         if self.use_iou_loss:
             self.anchors = anchors
-            self.iou_loss = IouLoss() ## Diou
+            self.iou_loss = IouLoss()
 
     def forward(
             self, cls_outputs: List[torch.Tensor], box_outputs: List[torch.Tensor],

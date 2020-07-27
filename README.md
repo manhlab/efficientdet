@@ -433,4 +433,3 @@ NOTE: I've only tried submitting D2 and D7 to dev server for sanity check so far
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.717553
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.806352
  ```
-# efficientdet

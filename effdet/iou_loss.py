@@ -1,12 +1,14 @@
 '''
 Based on:
  https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/86a370aa2cadea6ba7e5dffb2efc4bacc4c863ea/utils/box/box_utils.py#L47
+
  Distance-IoU Loss: Faster and Better Learning for Bounding Box Regression
  https://arxiv.org/pdf/1911.08287.pdf
  Generalized Intersection over Union: A Metric and A Loss for Bounding Box Regression
  https://giou.stanford.edu/GIoU.pdf
  UnitBox: An Advanced Object Detection Network
  https://arxiv.org/pdf/1608.01471.pdf
+
  Important!!! (in case of c_iou_loss)
  targets -> bboxes1, preds -> bboxes2
  '''
@@ -115,3 +117,6 @@ def compute_c_iou(bboxes1, bboxes2):
     c_iou = iou - (d_2 / c_2 + alpha * v)
     c_iou = torch.clamp(c_iou, min=-1.0, max=1.0)
     return c_iou
+
+
+

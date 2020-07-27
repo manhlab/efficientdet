@@ -418,3 +418,4 @@ class AnchorLabeler(object):
                 num_positives_out = torch.stack(num_positives_out)
 
         return cls_targets_out, box_targets_out, num_positives_out
+
